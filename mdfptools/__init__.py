@@ -1,1 +1,1 @@
-from . import Composer, Parameteriser, Extractor
+from . import Composer, Parameteriser, Extractor, Simulator, utils

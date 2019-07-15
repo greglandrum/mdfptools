@@ -1,12 +1,12 @@
 import tempfile
 import contextlib
-from openforcefield import utils
 from openmoltools import packmol
 
 from simtk import unit #Unit handling for OpenMM
 from simtk.openmm import *
 from simtk.openmm.app import *
 from simtk.openmm.app import PDBFile
+from openforcefield import utils
 from openforcefield.typing.engines.smirnoff import *
 
 
@@ -280,26 +280,28 @@ class SolutionParameteriser(BaseParameteriser):
 
 
     @classmethod
-    def via_openeye(cls, smiles):
+    def via_openeye(cls, smiles, **kwargs):
         #TODO currently only supports one solute molecule
-
         mol = cls._openeye_setter(smiles)
         mol = cls._openeye_charger(mol)
         cls._openeye_parameteriser(mol)
 
-        return cls.pmd_generator()
+        return cls.pmd_generator(**kwargs)
 
     @classmethod
-    def via_rdkit(cls, smiles):
+    def via_rdkit(cls, smiles, **kwargs):
         mol = cls._rdkit_setter(smiles)
         mol = cls._rdkit_charger(mol)
         cls._rdkit_parameteriser(mol)
-        return cls.pmd_generator()
+        return cls.pmd_generator(**kwargs)
 
     @classmethod
-    def pmd_generator(cls):
+    def pmd_generator(cls, **kwargs):
         fixer = PDBFixer(cls.pdb_filename)
-        fixer.addSolvent(padding = cls.default_padding)
+        if "padding" not in kwargs:
+            fixer.addSolvent(padding = cls.default_padding)
+        else:
+            fixer.addSolvent(padding = float(kwargs["padding"]))
 
         tmp_dir = tempfile.mkdtemp()
         cls.pdb_filename = tempfile.mktemp(suffix=".pdb", dir=tmp_dir)
