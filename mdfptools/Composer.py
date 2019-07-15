@@ -51,6 +51,20 @@ class BaseComposer():
                  fp[i].append(func(prop[i]))
         return fp
 
+class TrialSolutionComposer(BaseComposer):
+    def __init__(self, smiles, mdtraj_obj, parmed_obj, **kwargs):
+        self.kwargs = {"mdtraj_obj" : mdtraj_obj ,
+                        "parmed_obj" : parmed_obj}
+        self.kwargs = {**self.kwargs , **kwargs}
+        super(TrialSolutionComposer, self).__init__(smiles)
+    def _get_relevant_properties(self):
+        self.fp  = {**self.fp, **self._get_2d_descriptors()}
+        self.fp  = {**self.fp, **self._get_statistical_moments(TrialSolutionExtractor.extract_energies, **self.kwargs)}
+        self.fp  = {**self.fp, **self._get_statistical_moments(WaterExtractor.extract_rgyr, **self.kwargs)}
+        self.fp  = {**self.fp, **self._get_statistical_moments(WaterExtractor.extract_sasa, **self.kwargs)}
+
+        del self.kwargs
+
 class MDFPComposer(BaseComposer):
     def __init__(self, smiles, mdtraj_obj, parmed_obj, **kwargs):
         self.kwargs = {"mdtraj_obj" : mdtraj_obj ,

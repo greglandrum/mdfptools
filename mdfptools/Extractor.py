@@ -21,9 +21,7 @@ class BaseExtractor():
         raise NotImplementedError
 
     @classmethod
-    def extract_energies(cls, mdtraj_obj, parmed_obj, platform = "CPU", **kwargs):
-            df = {}
-
+    def _extract_energies_helper(cls, mdtraj_obj, parmed_obj, platform = "CPU", **kwargs):
             parm, traj = parmed_obj, mdtraj_obj
 
             system = parm.createSystem(nonbondedMethod=CutoffPeriodic, nonbondedCutoff=1.0*nanometer, constraints=AllBonds)
@@ -396,12 +394,22 @@ class BaseExtractor():
             if parm.box_vectors is not None:
                 context.setPeriodicBoxVectors(*parm.box_vectors) #TODO might be better to take the boxes from traj
 
+            return context, integrator
+
+    @classmethod
+    def extract_energies(cls, mdtraj_obj, parmed_obj, platform = "CPU", **kwargs):
+            df = {}
+
+
+            context, integrator = cls._extract_energies_helper(mdtraj_obj, parmed_obj, platform = "CPU", **kwargs)
+
+
             df["{}_intra_crf".format(cls.string_identifier)] = []
             df["{}_intra_lj".format(cls.string_identifier)] = []
             df["{}_total_crf".format(cls.string_identifier)] = []
             df["{}_total_lj".format(cls.string_identifier)] = []
-            for i in range(len(traj)):
-                context.setPositions(traj.openmm_positions(i))
+            for i in range(len(mdtraj_obj)):
+                context.setPositions(matraj_obj.openmm_positions(i))
 
                 df["{}_intra_crf".format(cls.string_identifier)].append(context.getState(getEnergy=True, groups=set(cls.group_name2num["intra_crf"])).getPotentialEnergy()._value)
                 df["{}_intra_lj".format(cls.string_identifier)].append(context.getState(getEnergy=True, groups=set(cls.group_name2num["intra_lj"])).getPotentialEnergy()._value)
@@ -557,6 +565,35 @@ class SolutionExtractor(BaseExtractor):
         return df
 ###############################################
 ###############################################
+class TrialSolutionExtractor(SolutionExtractor):
+    string_identifier = "TrialSolution"
+
+    @classmethod
+    def extract_energies(cls, mdtraj_obj, parmed_obj, platform = "CPU", **kwargs):
+
+        df = {}
+
+        context, integrator = cls._extract_energies_helper( mdtraj_obj, parmed_obj, platform = "CPU", **kwargs)
+
+        num_solvents = float(len(parmed_obj.residues) - 1)
+        # print("number of solvents" , num_solvents)
+
+        df["{}_intra_crf".format(cls.string_identifier)] = []
+        df["{}_intra_lj".format(cls.string_identifier)] = []
+        df["{}_total_crf".format(cls.string_identifier)] = []
+        df["{}_total_lj".format(cls.string_identifier)] = []
+        for i in range(len(mdtraj_obj)):
+            context.setPositions(mdtraj_obj.openmm_positions(i))
+
+            df["{}_intra_crf".format(cls.string_identifier)].append(context.getState(getEnergy=True, groups=set(cls.group_name2num["intra_crf"])).getPotentialEnergy()._value)
+            df["{}_intra_lj".format(cls.string_identifier)].append(context.getState(getEnergy=True, groups=set(cls.group_name2num["intra_lj"])).getPotentialEnergy()._value)
+            df["{}_total_crf".format(cls.string_identifier)].append(context.getState(getEnergy=True, groups=set(cls.group_name2num["inter_crf"])).getPotentialEnergy()._value / num_solvents)
+            df["{}_total_lj".format(cls.string_identifier)].append(context.getState(getEnergy=True, groups=set(cls.group_name2num["inter_lj"])).getPotentialEnergy()._value / num_solvents)
+
+
+        del context, integrator
+        return df
+
 
 class WaterExtractor(SolutionExtractor):
     string_identifier = "water"
