@@ -791,8 +791,8 @@ class ComposerGMX:
     #@Shu I would suggest to put the boolean argument include_SandP and atom_to_remove in extract_3DPSA
 
     @classmethod
-    def calc_psa3dUpdated(cls, obj_list:List[str]=None,
-                          default_polar_atom_elements: List[str] = ("O", "P", "S", "N"), select_H_atoms_neighboring_polar_atom:bool=True, upper_atom_polarity_cutoff: float = 0.5, lower_atom_polarity_cutoff: float = -0.5,
+    def calc_psa3dUpdated(cls, obj_list: List[str]=None,
+                          default_polar_atom_elements: Tuple[str] = ("O", "P", "S", "N"), select_H_atoms_neighboring_polar_atom:bool=True, upper_atom_polarity_cutoff: float = 0.5, lower_atom_polarity_cutoff: float = -0.5,
                           not_select_atom=None, additional_selection_requirement:str = "resn LIG",
                           probe_sphere_radius = 1.4, vdw_radii:Dict[str, float] = None,
                           state_selection: int or List[int] = -1) -> Tuple[float, float, float] :
@@ -826,7 +826,7 @@ class ComposerGMX:
 
         Returns
         ----------
-        obj_psa_dict: Tuple[float, float, float]
+        psa_stats: Tuple[float, float, float]
             Values correspond to mean, standard deviation, and median of the 3D-PSA calculated over the simulation time
         """
 
@@ -843,6 +843,7 @@ class ComposerGMX:
                              "O": 1.52,
                              "S": 1.8,
                          }
+
         [cmd.alter("elem " + elem, "vdw=" + str(vdwr)) for elem, vdwr in vdw_radii.items()]
 
         # probe sphere setting:
@@ -863,7 +864,6 @@ class ComposerGMX:
 
         # Loop over objects
         psa = []
-        #obj_psa_dict = {}
         for obj in obj_list:
             cmd.frame(0)    #jump to first state/frame of traj
 
@@ -894,16 +894,14 @@ class ComposerGMX:
                 cmd.select("polarAtoms", select_string)
                 ###calc surface area
                 psa.append(float(cmd.get_area("polarAtoms", state=state)))
-                
-                ###gather data
-                # obj_psa_dict.update({obj: psa})
+
 
         if(len(psa) == 0):
             raise ValueError("Could not calculate any 3D-PSA, please check your selection and if your molecules were loaded.")
         else:
-            obj_psa_dict = [np.mean(psa) / 100, np.std(psa) / 100, np.median(psa) / 100]  # /100 to have nm instead of Angstrom
+            psa_stats = (np.mean(psa) / 100, np.std(psa) / 100, np.median(psa) / 100)  # /100 to have nm instead of Angstrom
 
-        return obj_psa_dict
+        return psa_stats
 
     @classmethod
     def extract_psa3d(self, traj_file, gro_file, obj_list=None, include_SandP = None, cmpd_name = None):
