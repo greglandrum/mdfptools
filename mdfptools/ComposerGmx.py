@@ -10,9 +10,10 @@ import subprocess
 import glob
 from rdkit.Chem import AllChem
 import numpy as np
-from pymol import cmd
 import os
 from scipy.spatial import distance
+
+from pymol import cmd
 
 
 class ComposerGMX:
@@ -786,6 +787,121 @@ class ComposerGMX:
 
         return obj_psa_dict
 
+    from typing import List, Tuple, Dict    #Typing or no typing?
+    #@Shu I would suggest to put the boolean argument include_SandP and atom_to_remove in extract_3DPSA
+
+    @classmethod
+    def calc_psa3dUpdated(cls, obj_list:List[str]=None,
+                          default_polar_atom_elements: List[str] = ("O", "P", "S", "N"), select_H_atoms_neighboring_polar_atom:bool=True, upper_atom_polarity_cutoff: float = 0.5, lower_atom_polarity_cutoff: float = -0.5,
+                          not_select_atom=None, additional_selection_requirement:str = "resn LIG",
+                          probe_sphere_radius = 1.4, vdw_radii:Dict[str, float] = None,
+                          state_selection: int or List[int] = -1) -> Tuple[float, float, float] :
+        """
+        Help function to calculate the 3d polar surface area (3D-PSA) of molecules in Interface_Pymol for all the snapshots in a MD trajectory.
+        (Contribution by Benjamin Schroeder)
+
+        Parameters
+        ----------
+        obj_list: list, optional
+            list of pymol objects (Default = "cmpd1")
+        default_polar_atom_elements : Tuple[float], optional
+            gives the Atom elements, that are to be considered as polar atoms by default (Default = ("O", "P", "S", "N"))
+        select_H_atoms_neighboring_polar_atom : bool, optional
+            shall H-atoms be selected, that are neighboring a default polar atom? (Default = True)
+        upper_atom_polarity_cutoff : float, optional
+            if partial charges are assigned in pymol, they are compared vs this upper bound to decide if a non default polar atom should be considered polar. (Default = 0.5)
+        lower_atom_polarity_cutoff : float, optional
+            if partial charges are assigned in pymol, they are compared vs this lower bound to decide if a non default polar atom should be considered polar. (Default = -0.5)
+        not_select_atom: str, optional
+            Single atom name of the atom to remove from the selection (Default = None).
+            Useful if you want to include only S or only P in the calculation of the 3D-PSA.
+        additional_selection_requirement :  str, optional
+            an additional requirement for the atom selection. (Default= resn LIG)
+        probe_sphere_radius : float, optional
+            radius of the probe sphere. (Default= 1.4)
+        vdw_radii : Dict[str, float], optional
+            vdw radii of the atoms in Pymol (Default=takes standard vdw radii)
+        state_selection : int or List[int], optional
+            select certain states/frames for 3D-PSA calculation or select all with -1 (Default= -1)
+
+        Returns
+        ----------
+        obj_psa_dict: Tuple[float, float, float]
+            Values correspond to mean, standard deviation, and median of the 3D-PSA calculated over the simulation time
+        """
+
+        # IO
+        if (obj_list is None):
+            obj_list = cmd.get_names("objects")
+
+        # set vdw radii of atoms
+        # We do this, as the vdw radii of H is a bit old in PyMol
+        if(isinstance(vdw_radii, type(None))):
+            vdw_radii = vdw_std_radii = {"H": 1.09,
+                             "C": 1.7,
+                             "N": 1.55,
+                             "O": 1.52,
+                             "S": 1.8,
+                         }
+        [cmd.alter("elem " + elem, "vdw=" + str(vdwr)) for elem, vdwr in vdw_radii.items()]
+
+        # probe sphere setting:
+        #Allows to change the size of the probe sphere, calculating the PSA
+        psa3d_set_sphere_solvent = "set solvent_radius=" + str(probe_sphere_radius) + "; set dot_density=4; set dot_solvent=1;"
+        cmd.do(psa3d_set_sphere_solvent)
+
+        ##prebuild selection for relevant atoms
+        #build default polar atom selector
+        polar_atoms_selector = "(elem " +"+".join(default_polar_atom_elements) + " "
+        if(select_H_atoms_neighboring_polar_atom):
+            polar_atoms_selector += " or (elem H and (neighbor elem " +"+".join(default_polar_atom_elements) + "))"
+        polar_atoms_selector+=")"
+
+        if(isinstance(additional_selection_requirement, str) and len(additional_selection_requirement)>0):
+            additional_selection_requirement = " and "+additional_selection_requirement
+
+        # Loop over objects
+        psa = []
+        #obj_psa_dict = {}
+        for obj in obj_list:
+            cmd.frame(0)    #jump to first state/frame of traj
+
+            # select states/frames, that should be used for the 3D-PSA:
+            if (state_selection == -1):
+                states = range(1, cmd.count_states(obj) + 1)  # get all states of the object
+            elif (type(state_selection) == int):
+                states = [state_selection]
+            else:
+                states = list(map(int, state_selection))  # list of ints is given
+
+            ##Loop over all selected states
+            psa = []
+            for state in states:
+                cmd.frame(state)
+
+                ###select atoms IDs by partialCharge Filter - might be state dependent. Depends on underlying model.
+                atomID_of_polarAtom = []
+                cmd.iterate("(" + obj + " and (pc. < " + str(lower_atom_polarity_cutoff) + " or pc. > " + str(upper_atom_polarity_cutoff) + "))", "atomID_of_polarAtom.append(ID)", space=locals())
+                partialCSelection = " or ID " + "+".join(map(str, atomID_of_polarAtom))  if (len(atomID_of_polarAtom) > 0) else ""
+
+                ###select all needed atoms by partialCSelection or element or H next to (O ,N)
+                if not_select_atom != None and isinstance(not_select_atom, str):
+                    select_string = obj + " and ((" + polar_atoms_selector + " " + additional_selection_requirement + " and not name {}".format(not_select_atom)+" ) " + partialCSelection + ")"
+                else:
+                    select_string =  obj + " and " + "(("+polar_atoms_selector + " " + additional_selection_requirement + " ) " + partialCSelection + ")"
+
+                cmd.select("polarAtoms", select_string)
+                ###calc surface area
+                psa.append(float(cmd.get_area("polarAtoms", state=state)))
+                ###gather data
+                # obj_psa_dict.update({obj: psa})
+
+        if(len(psa) == 0):
+            raise ValueError("Could not calculate any 3D-PSA, please check your selection and if your molecules were loaded.")
+        else:
+            obj_psa_dict = [np.mean(psa) / 100, np.std(psa) / 100, np.median(psa) / 100]  # /100 to have nm instead of Angstrom
+
+        return obj_psa_dict
 
     @classmethod
     def extract_psa3d(self, traj_file, gro_file, obj_list=None, include_SandP = None, cmpd_name = None):
