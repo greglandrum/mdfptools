@@ -850,13 +850,14 @@ class ComposerGMX:
         psa3d_set_sphere_solvent = "set solvent_radius=" + str(probe_sphere_radius) + "; set dot_density=4; set dot_solvent=1;"
         cmd.do(psa3d_set_sphere_solvent)
 
-        ##prebuild selection for relevant atoms
-        #build default polar atom selector
+        #prebuild selection for relevant atoms
+        ##build default polar atom selector
         polar_atoms_selector = "(elem " +"+".join(default_polar_atom_elements) + " "
         if(select_H_atoms_neighboring_polar_atom):
             polar_atoms_selector += " or (elem H and (neighbor elem " +"+".join(default_polar_atom_elements) + "))"
         polar_atoms_selector+=")"
 
+        ##handle additional requirement
         if(isinstance(additional_selection_requirement, str) and len(additional_selection_requirement)>0):
             additional_selection_requirement = " and "+additional_selection_requirement
 
@@ -884,7 +885,7 @@ class ComposerGMX:
                 cmd.iterate("(" + obj + " and (pc. < " + str(lower_atom_polarity_cutoff) + " or pc. > " + str(upper_atom_polarity_cutoff) + "))", "atomID_of_polarAtom.append(ID)", space=locals())
                 partialCSelection = " or ID " + "+".join(map(str, atomID_of_polarAtom))  if (len(atomID_of_polarAtom) > 0) else ""
 
-                ###select all needed atoms by partialCSelection or element or H next to (O ,N)
+                ###select all needed atoms by partialCSelection, default polar, etc ...
                 if not_select_atom != None and isinstance(not_select_atom, str):
                     select_string = obj + " and ((" + polar_atoms_selector + " " + additional_selection_requirement + " and not name {}".format(not_select_atom)+" ) " + partialCSelection + ")"
                 else:
@@ -893,6 +894,7 @@ class ComposerGMX:
                 cmd.select("polarAtoms", select_string)
                 ###calc surface area
                 psa.append(float(cmd.get_area("polarAtoms", state=state)))
+                
                 ###gather data
                 # obj_psa_dict.update({obj: psa})
 
